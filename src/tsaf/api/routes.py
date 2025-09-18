@@ -16,6 +16,7 @@ from tsaf.core.engine import TSAFEngine
 from tsaf.analyzer.models import (
     AnalysisRequest, AnalysisResponse, ProtocolType, VulnerabilityCategory
 )
+from tsaf.translator.models import TranslationResponse
 from tsaf.database.connection import get_database_manager
 from tsaf.database.repositories import (
     AgentRepository, MessageRepository, VulnerabilityRepository,
@@ -51,6 +52,8 @@ class TranslationRequest(BaseModel):
     agent_id: Optional[str] = None
     preserve_semantics: bool = True
     verify_security: bool = True
+    enable_formal_verification: bool = False
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class BulkAnalysisRequest(BaseModel):
@@ -204,15 +207,16 @@ async def analyze_bulk_messages(
 async def translate_message(
     request: TranslationRequest,
     engine: TSAFEngine = Depends(get_tsaf_engine)
-) -> Dict[str, Any]:
+) -> TranslationResponse:
     """
-    Translate message between protocols.
+    Translate message between protocols using advanced Translation Engine.
 
     - **message**: Message content to translate
     - **source_protocol**: Source protocol type
     - **target_protocol**: Target protocol type
     - **preserve_semantics**: Ensure semantic preservation
     - **verify_security**: Verify security properties
+    - **enable_formal_verification**: Enable formal verification
     """
     try:
         result = await engine.translate_message(
@@ -220,18 +224,11 @@ async def translate_message(
             source_protocol=request.source_protocol,
             target_protocol=request.target_protocol,
             preserve_semantics=request.preserve_semantics,
-            verify_security=request.verify_security
+            verify_security=request.verify_security,
+            enable_formal_verification=getattr(request, 'enable_formal_verification', False)
         )
 
-        return {
-            "translation_id": result.get("translation_id"),
-            "source_protocol": request.source_protocol.value,
-            "target_protocol": request.target_protocol.value,
-            "translated_message": result.get("translated_message"),
-            "semantic_similarity": result.get("semantic_similarity"),
-            "security_preserved": result.get("security_preserved"),
-            "verification_results": result.get("verification_results")
-        }
+        return result
 
     except Exception as e:
         logger.error("Translation failed", error=str(e))
