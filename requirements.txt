@@ -30,7 +30,7 @@ passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 
 # Machine Learning and NLP (optional - graceful degradation if not available)
-torch==2.1.1
+torch==2.8.0
 transformers==4.36.0
 scikit-learn==1.3.2
 numpy==1.24.4
