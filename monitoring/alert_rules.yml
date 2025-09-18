@@ -1,0 +1,255 @@
+# Prometheus Alert Rules for TSAF
+groups:
+  - name: tsaf.rules
+    rules:
+      # High Error Rate
+      - alert: TSAFHighErrorRate
+        expr: rate(tsaf_http_requests_total{status_code=~"5.."}[5m]) / rate(tsaf_http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "TSAF high error rate detected"
+          description: "TSAF error rate is {{ $value | humanizePercentage }} for more than 2 minutes"
+
+      # High Response Time
+      - alert: TSAFHighResponseTime
+        expr: histogram_quantile(0.95, rate(tsaf_http_request_duration_seconds_bucket[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "TSAF high response time"
+          description: "95th percentile response time is {{ $value }}s for more than 3 minutes"
+
+      # High Memory Usage
+      - alert: TSAFHighMemoryUsage
+        expr: tsaf_memory_usage_bytes{type="rss"} / tsaf_memory_usage_bytes{type="limit"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "TSAF high memory usage"
+          description: "TSAF memory usage is {{ $value | humanizePercentage }} for more than 5 minutes"
+
+      # High CPU Usage
+      - alert: TSAFHighCPUUsage
+        expr: tsaf_cpu_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "TSAF high CPU usage"
+          description: "TSAF CPU usage is {{ $value }}% for more than 5 minutes"
+
+      # Database Connection Issues
+      - alert: TSAFDatabaseDown
+        expr: tsaf_component_status{component="database"} != 1
+        for: 30s
+        labels:
+          severity: critical
+          service: tsaf
+        annotations:
+          summary: "TSAF database connection issues"
+          description: "TSAF cannot connect to the database"
+
+      # Security Threat Detection
+      - alert: TSAFSecurityThreatDetected
+        expr: increase(tsaf_malicious_messages_total{confidence_level="high"}[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          service: tsaf
+          category: security
+        annotations:
+          summary: "High-confidence security threats detected"
+          description: "{{ $value }} high-confidence malicious messages detected in the last 5 minutes"
+
+      # High Vulnerability Detection Rate
+      - alert: TSAFHighVulnerabilityRate
+        expr: rate(tsaf_vulnerabilities_detected_total{severity=~"high|critical"}[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+          category: security
+        annotations:
+          summary: "High vulnerability detection rate"
+          description: "High/critical vulnerabilities are being detected at {{ $value }} per second"
+
+      # Translation Failures
+      - alert: TSAFTranslationFailures
+        expr: rate(tsaf_translations_total{status="failure"}[5m]) / rate(tsaf_translations_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "High translation failure rate"
+          description: "Translation failure rate is {{ $value | humanizePercentage }}"
+
+      # Verification System Down
+      - alert: TSAFVerificationDown
+        expr: tsaf_component_status{component="verifier"} != 1
+        for: 2m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "TSAF verification system degraded"
+          description: "Formal verification system is not fully operational"
+
+      # Low Semantic Similarity
+      - alert: TSAFLowSemanticSimilarity
+        expr: histogram_quantile(0.5, rate(tsaf_semantic_similarity_score_bucket[10m])) < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "Low semantic similarity in translations"
+          description: "Median semantic similarity score is {{ $value }} for translations"
+
+      # Agent Reputation Issues
+      - alert: TSAFSuspiciousAgentActivity
+        expr: increase(tsaf_agent_interactions_total{result="failure"}[10m]) > 20
+        for: 2m
+        labels:
+          severity: warning
+          service: tsaf
+          category: security
+        annotations:
+          summary: "Suspicious agent activity detected"
+          description: "Agent {{ $labels.agent_id }} has {{ $value }} failed interactions in 10 minutes"
+
+      # Service Unavailable
+      - alert: TSAFServiceDown
+        expr: up{job="tsaf-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: tsaf
+        annotations:
+          summary: "TSAF service is down"
+          description: "TSAF application is not responding to health checks"
+
+      # Too Many Active Alerts
+      - alert: TSAFTooManyAlerts
+        expr: ALERTS{alertstate="firing",service="tsaf"} > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "Too many active TSAF alerts"
+          description: "There are {{ $value }} active alerts for TSAF"
+
+  - name: tsaf.infrastructure
+    rules:
+      # PostgreSQL Down
+      - alert: TSAFPostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: postgresql
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database is not responding"
+
+      # Redis Down
+      - alert: TSAFRedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache service is not responding"
+
+      # High Database Connections
+      - alert: TSAFHighDatabaseConnections
+        expr: tsaf_database_connections{state="active"} / tsaf_database_connections{state="total"} > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connection pool usage is {{ $value | humanizePercentage }}"
+
+      # Disk Space Low
+      - alert: TSAFDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value | humanizePercentage }} full on {{ $labels.device }}"
+
+  - name: tsaf.performance
+    rules:
+      # Slow Analysis Performance
+      - alert: TSAFSlowAnalysis
+        expr: histogram_quantile(0.95, rate(tsaf_analysis_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "Slow message analysis performance"
+          description: "95th percentile analysis time is {{ $value }}s"
+
+      # High Request Rate
+      - alert: TSAFHighRequestRate
+        expr: rate(tsaf_http_requests_total[5m]) > 1000
+        for: 2m
+        labels:
+          severity: info
+          service: tsaf
+        annotations:
+          summary: "High request rate"
+          description: "TSAF is receiving {{ $value }} requests per second"
+
+      # Cache Miss Rate High
+      - alert: TSAFHighCacheMissRate
+        expr: tsaf_cache_hit_ratio < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "High cache miss rate"
+          description: "Cache hit ratio is {{ $value | humanizePercentage }}"
+
+  - name: tsaf.business
+    rules:
+      # Low Analysis Throughput
+      - alert: TSAFLowAnalysisThroughput
+        expr: rate(tsaf_messages_analyzed_total[5m]) < 1
+        for: 10m
+        labels:
+          severity: warning
+          service: tsaf
+        annotations:
+          summary: "Low message analysis throughput"
+          description: "Message analysis rate is {{ $value }} per second"
+
+      # Agent Trust Issues
+      - alert: TSAFCompromisedAgents
+        expr: count(tsaf_agent_reputation_score{trust_level="compromised"}) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: tsaf
+          category: security
+        annotations:
+          summary: "Compromised agents detected"
+          description: "{{ $value }} agents are marked as compromised"

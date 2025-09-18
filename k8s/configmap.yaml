@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tsaf-config
+  namespace: tsaf
+  labels:
+    app: tsaf
+    component: config
+data:
+  # Application configuration
+  TSAF_ENV: "production"
+  TSAF_DEBUG: "false"
+  TSAF_RUN_MIGRATIONS: "true"
+  TSAF_DOWNLOAD_MODELS: "false"
+
+  # Server configuration
+  SERVER__HOST: "0.0.0.0"
+  SERVER__PORT: "8000"
+  SERVER__WORKERS: "4"
+  SERVER__RELOAD: "false"
+  SERVER__ACCESS_LOG: "true"
+
+  # Security configuration
+  SECURITY__RATE_LIMIT: "1000"
+  SECURITY__RATE_WINDOW: "3600"
+  SECURITY__ENABLE_CORS: "true"
+  SECURITY__MAX_CONTENT_LENGTH: "10485760"
+
+  # Analyzer configuration
+  ANALYZER__ENABLE_STATIC_ANALYSIS: "true"
+  ANALYZER__ENABLE_DYNAMIC_ANALYSIS: "true"
+  ANALYZER__ENABLE_ML_DETECTION: "true"
+  ANALYZER__ENABLE_BEHAVIORAL_ANALYSIS: "true"
+  ANALYZER__RISK_THRESHOLD: "0.5"
+  ANALYZER__CONFIDENCE_THRESHOLD: "0.7"
+  ANALYZER__MAX_CONCURRENT_ANALYSES: "10"
+
+  # Detector configuration
+  DETECTOR__ENABLE_PATTERN_DETECTION: "true"
+  DETECTOR__ENABLE_SIGNATURE_DETECTION: "true"
+  DETECTOR__ENABLE_ANOMALY_DETECTION: "true"
+  DETECTOR__DETECTION_SENSITIVITY: "0.7"
+
+  # Translator configuration
+  TRANSLATOR__ENABLE_SEMANTIC_VALIDATION: "true"
+  TRANSLATOR__ENABLE_SECURITY_VALIDATION: "true"
+  TRANSLATOR__ENABLE_FORMAL_VERIFICATION: "true"
+
+  # Verifier configuration
+  VERIFIER__ENABLE_PROVERIF: "true"
+  VERIFIER__ENABLE_TAMARIN: "true"
+  VERIFIER__ENABLE_TLAPLUS: "true"
+  VERIFIER__VERIFICATION_TIMEOUT: "300"
+  VERIFIER__PARALLEL_VERIFICATION: "true"
+
+  # Monitoring configuration
+  MONITORING__ENABLE_METRICS: "true"
+  MONITORING__ENABLE_TRACING: "true"
+  MONITORING__METRICS_INTERVAL: "60"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tsaf-cors-config
+  namespace: tsaf
+  labels:
+    app: tsaf
+    component: cors
+data:
+  cors-origins: |
+    ["*"]
+  cors-methods: |
+    ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+  cors-headers: |
+    ["*"]

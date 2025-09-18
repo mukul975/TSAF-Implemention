@@ -1,0 +1,216 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'tsaf-alerts@your-domain.com'
+  smtp_auth_username: 'tsaf-alerts@your-domain.com'
+  smtp_auth_password: 'your-smtp-password'
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+route:
+  group_by: ['alertname', 'service', 'severity']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default'
+  routes:
+    # Critical alerts go to multiple channels
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 1h
+
+    # Security alerts need immediate attention
+    - match:
+        category: security
+      receiver: 'security-team'
+      group_wait: 5s
+      repeat_interval: 30m
+
+    # Infrastructure alerts
+    - match:
+        service: infrastructure
+      receiver: 'infrastructure-team'
+      repeat_interval: 2h
+
+    # Performance warnings
+    - match:
+        severity: warning
+      receiver: 'performance-alerts'
+      repeat_interval: 6h
+
+    # Info level alerts
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      repeat_interval: 12h
+
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'tsaf-team@your-domain.com'
+        subject: 'TSAF Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+
+          Details:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ if .EndsAt }}Ended: {{ .EndsAt.Format "2006-01-02 15:04:05" }}{{ end }}
+          {{ end }}
+
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'tsaf-oncall@your-domain.com'
+        subject: '🚨 CRITICAL TSAF Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🚨 CRITICAL ALERT 🚨
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Service: {{ .Labels.service }}
+
+          This requires immediate attention!
+
+          Details:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#tsaf-critical'
+        title: '🚨 Critical TSAF Alert'
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+
+          Service: {{ .Labels.service }}
+          Started: {{ .StartsAt.Format "15:04:05" }}
+          {{ end }}
+        color: 'danger'
+
+  - name: 'security-team'
+    email_configs:
+      - to: 'security-team@your-domain.com'
+        subject: '🔒 TSAF Security Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🔒 SECURITY ALERT 🔒
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+
+          Security Details:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#tsaf-security'
+        title: '🔒 TSAF Security Alert'
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+
+          Category: {{ .Labels.category }}
+          Started: {{ .StartsAt.Format "15:04:05" }}
+          {{ end }}
+        color: 'warning'
+
+  - name: 'infrastructure-team'
+    email_configs:
+      - to: 'infrastructure@your-domain.com'
+        subject: '🏗️ TSAF Infrastructure Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🏗️ INFRASTRUCTURE ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+
+          Infrastructure Details:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+
+  - name: 'performance-alerts'
+    email_configs:
+      - to: 'performance-team@your-domain.com'
+        subject: '⚡ TSAF Performance Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          ⚡ PERFORMANCE ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+
+          Performance Metrics:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+
+  - name: 'info-alerts'
+    email_configs:
+      - to: 'tsaf-info@your-domain.com'
+        subject: 'ℹ️ TSAF Info: {{ .GroupLabels.alertname }}'
+        body: |
+          ℹ️ INFORMATIONAL ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+
+          Details:
+          {{ range .Labels.SortedPairs }}  - {{ .Name }}: {{ .Value }}
+          {{ end }}
+
+          Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+
+inhibit_rules:
+  # Inhibit any warning-level alerts when the same alertname
+  # and service has a critical alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']
+
+  # Inhibit any info alerts when the service is down
+  - source_match:
+      alertname: 'TSAFServiceDown'
+    target_match:
+      service: 'tsaf'
+    equal: ['service']
+
+  # Inhibit database connection alerts when database is down
+  - source_match:
+      alertname: 'TSAFDatabaseDown'
+    target_match:
+      alertname: 'TSAFHighDatabaseConnections'
+    equal: ['service']
+
+# Silence rules for maintenance windows
+# Example: silence all alerts for a specific service during maintenance
+silences: []
+
+# Custom notification templates
+templates:
+  - '/etc/alertmanager/templates/email.tmpl'
+  - '/etc/alertmanager/templates/slack.tmpl'

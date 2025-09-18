@@ -1,0 +1,30 @@
+apiVersion: v2
+name: tsaf
+description: TSAF - Translation Security Analysis Framework Helm Chart
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - analysis
+  - translation
+  - multi-agent
+  - protocol
+home: https://github.com/tsaf/tsaf
+sources:
+  - https://github.com/tsaf/tsaf
+maintainers:
+  - name: TSAF Team
+    email: team@tsaf.io
+icon: https://tsaf.io/icon.png
+dependencies:
+  - name: postgresql
+    version: 12.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 17.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+annotations:
+  category: Security

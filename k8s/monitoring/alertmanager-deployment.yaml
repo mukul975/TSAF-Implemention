@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: tsaf-monitoring
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'localhost:587'
+      smtp_from: 'tsaf-alerts@your-domain.com'
+
+    route:
+      group_by: ['alertname', 'service', 'severity']
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'default'
+      routes:
+        - match:
+            severity: critical
+          receiver: 'critical-alerts'
+          group_wait: 5s
+          repeat_interval: 1h
+        - match:
+            category: security
+          receiver: 'security-team'
+          group_wait: 5s
+          repeat_interval: 30m
+
+    receivers:
+      - name: 'default'
+        email_configs:
+          - to: 'tsaf-team@your-domain.com'
+            subject: 'TSAF Alert: {{ .GroupLabels.alertname }}'
+            body: |
+              {{ range .Alerts }}
+              Alert: {{ .Annotations.summary }}
+              Description: {{ .Annotations.description }}
+              Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+              {{ end }}
+
+      - name: 'critical-alerts'
+        email_configs:
+          - to: 'tsaf-oncall@your-domain.com'
+            subject: '🚨 CRITICAL TSAF Alert: {{ .GroupLabels.alertname }}'
+            body: |
+              🚨 CRITICAL ALERT 🚨
+              {{ range .Alerts }}
+              Alert: {{ .Annotations.summary }}
+              Description: {{ .Annotations.description }}
+              Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+              {{ end }}
+
+      - name: 'security-team'
+        email_configs:
+          - to: 'security-team@your-domain.com'
+            subject: '🔒 TSAF Security Alert: {{ .GroupLabels.alertname }}'
+            body: |
+              🔒 SECURITY ALERT 🔒
+              {{ range .Alerts }}
+              Alert: {{ .Annotations.summary }}
+              Description: {{ .Annotations.description }}
+              Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+              {{ end }}
+
+    inhibit_rules:
+      - source_match:
+          severity: 'critical'
+        target_match:
+          severity: 'warning'
+        equal: ['alertname', 'service']
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: tsaf-monitoring
+  labels:
+    app: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:v0.25.0
+        args:
+          - '--config.file=/etc/alertmanager/alertmanager.yml'
+          - '--storage.path=/alertmanager'
+          - '--web.external-url=http://alertmanager.tsaf.local'
+          - '--web.route-prefix=/'
+          - '--cluster.listen-address=0.0.0.0:9094'
+        ports:
+        - containerPort: 9093
+          name: web
+        - containerPort: 9094
+          name: mesh
+        volumeMounts:
+        - name: config
+          mountPath: /etc/alertmanager
+        - name: storage
+          mountPath: /alertmanager
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: config
+        configMap:
+          name: alertmanager-config
+      - name: storage
+        persistentVolumeClaim:
+          claimName: alertmanager-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: tsaf-monitoring
+  labels:
+    app: alertmanager
+spec:
+  ports:
+  - port: 9093
+    targetPort: 9093
+    name: web
+  - port: 9094
+    targetPort: 9094
+    name: mesh
+  selector:
+    app: alertmanager
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-storage
+  namespace: tsaf-monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager-ingress
+  namespace: tsaf-monitoring
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - alertmanager.tsaf.local
+    secretName: alertmanager-tls
+  rules:
+  - host: alertmanager.tsaf.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: alertmanager
+            port:
+              number: 9093

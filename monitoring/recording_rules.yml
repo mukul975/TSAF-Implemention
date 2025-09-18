@@ -1,0 +1,178 @@
+# Prometheus Recording Rules for TSAF
+# These rules pre-compute frequently needed metrics for better dashboard performance
+
+groups:
+  - name: tsaf.recording.rules
+    interval: 30s
+    rules:
+      # HTTP request rates by service
+      - record: tsaf:http_request_rate:5m
+        expr: rate(tsaf_http_requests_total[5m])
+
+      - record: tsaf:http_error_rate:5m
+        expr: rate(tsaf_http_requests_total{status_code=~"5.."}[5m]) / rate(tsaf_http_requests_total[5m])
+
+      # Response time percentiles
+      - record: tsaf:http_request_duration:p50:5m
+        expr: histogram_quantile(0.50, rate(tsaf_http_request_duration_seconds_bucket[5m]))
+
+      - record: tsaf:http_request_duration:p95:5m
+        expr: histogram_quantile(0.95, rate(tsaf_http_request_duration_seconds_bucket[5m]))
+
+      - record: tsaf:http_request_duration:p99:5m
+        expr: histogram_quantile(0.99, rate(tsaf_http_request_duration_seconds_bucket[5m]))
+
+      # Analysis performance metrics
+      - record: tsaf:analysis_rate:5m
+        expr: rate(tsaf_messages_analyzed_total[5m])
+
+      - record: tsaf:analysis_duration:p95:5m
+        expr: histogram_quantile(0.95, rate(tsaf_analysis_duration_seconds_bucket[5m]))
+
+      - record: tsaf:analysis_success_rate:5m
+        expr: rate(tsaf_analysis_results_total{result="success"}[5m]) / rate(tsaf_analysis_results_total[5m])
+
+      # Security metrics
+      - record: tsaf:vulnerability_detection_rate:5m
+        expr: rate(tsaf_vulnerabilities_detected_total[5m])
+
+      - record: tsaf:high_severity_vulnerability_rate:5m
+        expr: rate(tsaf_vulnerabilities_detected_total{severity=~"high|critical"}[5m])
+
+      - record: tsaf:malicious_message_rate:5m
+        expr: rate(tsaf_malicious_messages_total[5m])
+
+      - record: tsaf:security_threat_score:avg:5m
+        expr: avg(tsaf_security_threat_score)
+
+      # Translation metrics
+      - record: tsaf:translation_rate:5m
+        expr: rate(tsaf_translations_total[5m])
+
+      - record: tsaf:translation_success_rate:5m
+        expr: rate(tsaf_translations_total{status="success"}[5m]) / rate(tsaf_translations_total[5m])
+
+      - record: tsaf:semantic_similarity:p50:10m
+        expr: histogram_quantile(0.50, rate(tsaf_semantic_similarity_score_bucket[10m]))
+
+      # Verification metrics
+      - record: tsaf:verification_rate:5m
+        expr: rate(tsaf_verifications_total[5m])
+
+      - record: tsaf:verification_success_rate:5m
+        expr: rate(tsaf_verifications_total{status="success"}[5m]) / rate(tsaf_verifications_total[5m])
+
+      - record: tsaf:verification_duration:p95:5m
+        expr: histogram_quantile(0.95, rate(tsaf_verification_duration_seconds_bucket[5m]))
+
+      # Agent reputation metrics
+      - record: tsaf:agent_interaction_rate:5m
+        expr: rate(tsaf_agent_interactions_total[5m])
+
+      - record: tsaf:agent_failure_rate:5m
+        expr: rate(tsaf_agent_interactions_total{result="failure"}[5m]) / rate(tsaf_agent_interactions_total[5m])
+
+      - record: tsaf:compromised_agents:count
+        expr: count(tsaf_agent_reputation_score{trust_level="compromised"})
+
+      # System resource utilization
+      - record: tsaf:memory_utilization:ratio
+        expr: tsaf_memory_usage_bytes{type="rss"} / tsaf_memory_usage_bytes{type="limit"}
+
+      - record: tsaf:cpu_utilization:avg:5m
+        expr: avg(tsaf_cpu_usage_percent)
+
+      - record: tsaf:database_connection_utilization:ratio
+        expr: tsaf_database_connections{state="active"} / tsaf_database_connections{state="total"}
+
+  - name: tsaf.aggregation.rules
+    interval: 1m
+    rules:
+      # Aggregate metrics by protocol
+      - record: tsaf:messages_by_protocol:rate:5m
+        expr: sum(rate(tsaf_messages_analyzed_total[5m])) by (protocol)
+
+      - record: tsaf:vulnerabilities_by_protocol:rate:5m
+        expr: sum(rate(tsaf_vulnerabilities_detected_total[5m])) by (protocol)
+
+      - record: tsaf:analysis_duration_by_protocol:p95:5m
+        expr: histogram_quantile(0.95, sum(rate(tsaf_analysis_duration_seconds_bucket[5m])) by (protocol, le))
+
+      # Aggregate metrics by severity
+      - record: tsaf:vulnerabilities_by_severity:rate:5m
+        expr: sum(rate(tsaf_vulnerabilities_detected_total[5m])) by (severity)
+
+      - record: tsaf:vulnerabilities_by_type:rate:5m
+        expr: sum(rate(tsaf_vulnerabilities_detected_total[5m])) by (vulnerability_type)
+
+      # Aggregate metrics by agent
+      - record: tsaf:messages_by_agent:rate:5m
+        expr: sum(rate(tsaf_messages_analyzed_total[5m])) by (agent_id)
+
+      - record: tsaf:agent_reputation_by_level:count
+        expr: count(tsaf_agent_reputation_score) by (trust_level)
+
+      # Service health aggregations
+      - record: tsaf:component_availability:ratio
+        expr: avg(tsaf_component_status) by (component)
+
+      - record: tsaf:service_uptime:ratio
+        expr: avg(up{job="tsaf-app"})
+
+  - name: tsaf.business.rules
+    interval: 5m
+    rules:
+      # Business KPIs
+      - record: tsaf:throughput:messages_per_hour
+        expr: rate(tsaf_messages_analyzed_total[1h]) * 3600
+
+      - record: tsaf:security_coverage:ratio
+        expr: rate(tsaf_messages_analyzed_total[5m]) / rate(tsaf_http_requests_total{endpoint="/analyze"}[5m])
+
+      - record: tsaf:verification_coverage:ratio
+        expr: rate(tsaf_verifications_total[5m]) / rate(tsaf_translations_total[5m])
+
+      - record: tsaf:mean_time_to_detection:seconds
+        expr: avg(tsaf_analysis_duration_seconds)
+
+      - record: tsaf:false_positive_rate:ratio
+        expr: rate(tsaf_analysis_results_total{result="false_positive"}[5m]) / rate(tsaf_analysis_results_total[5m])
+
+      # SLA metrics
+      - record: tsaf:availability:ratio:5m
+        expr: avg_over_time(up{job="tsaf-app"}[5m])
+
+      - record: tsaf:response_time_sla:ratio:5m
+        expr: rate(tsaf_http_request_duration_seconds_bucket{le="2.0"}[5m]) / rate(tsaf_http_request_duration_seconds_count[5m])
+
+      - record: tsaf:error_budget:ratio:5m
+        expr: 1 - tsaf:http_error_rate:5m
+
+  - name: tsaf.capacity.rules
+    interval: 10m
+    rules:
+      # Capacity planning metrics
+      - record: tsaf:request_volume_trend:rate:1h
+        expr: rate(tsaf_http_requests_total[1h])
+
+      - record: tsaf:peak_analysis_rate:max:1h
+        expr: max_over_time(tsaf:analysis_rate:5m[1h])
+
+      - record: tsaf:resource_saturation:cpu:max:1h
+        expr: max_over_time(tsaf:cpu_utilization:avg:5m[1h])
+
+      - record: tsaf:resource_saturation:memory:max:1h
+        expr: max_over_time(tsaf:memory_utilization:ratio[1h])
+
+      - record: tsaf:database_load:max:1h
+        expr: max_over_time(tsaf:database_connection_utilization:ratio[1h])
+
+      # Growth metrics
+      - record: tsaf:daily_message_volume
+        expr: increase(tsaf_messages_analyzed_total[24h])
+
+      - record: tsaf:daily_vulnerability_count
+        expr: increase(tsaf_vulnerabilities_detected_total[24h])
+
+      - record: tsaf:weekly_agent_growth
+        expr: increase(tsaf_agent_registrations_total[7d])

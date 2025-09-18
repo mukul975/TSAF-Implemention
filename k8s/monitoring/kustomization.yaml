@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tsaf-monitoring
+
+resources:
+  - monitoring-namespace.yaml
+  - prometheus-deployment.yaml
+  - grafana-deployment.yaml
+  - alertmanager-deployment.yaml
+  - node-exporter-daemonset.yaml
+
+images:
+  - name: prom/prometheus
+    newTag: v2.40.0
+  - name: grafana/grafana
+    newTag: 9.2.0
+  - name: prom/alertmanager
+    newTag: v0.25.0
+  - name: prom/node-exporter
+    newTag: v1.4.0
+
+commonLabels:
+  app.kubernetes.io/part-of: tsaf
+  app.kubernetes.io/managed-by: kustomize
+
+patchesStrategicMerge:
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: prometheus
+    spec:
+      template:
+        metadata:
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9090"
+            prometheus.io/path: "/metrics"
+
+configMapGenerator:
+  - name: monitoring-scripts
+    files:
+      - deploy.sh
+      - backup.sh
+
+secretGenerator:
+  - name: monitoring-secrets
+    literals:
+      - smtp-password=change-me
+      - slack-webhook=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+
+generatorOptions:
+  disableNameSuffixHash: true

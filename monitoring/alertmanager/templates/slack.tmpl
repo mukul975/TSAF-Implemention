@@ -1,0 +1,85 @@
+{{ define "slack.tsaf.title" }}
+{{ if eq .Status "firing" }}🔥 TSAF Alert FIRING{{ else }}✅ TSAF Alert RESOLVED{{ end }}
+{{ end }}
+
+{{ define "slack.tsaf.text" }}
+{{ range .Alerts }}
+*{{ .Annotations.summary }}*
+{{ .Annotations.description }}
+
+*Service:* {{ .Labels.service }}
+*Severity:* {{ .Labels.severity | upper }}
+{{ if .Labels.category }}*Category:* {{ .Labels.category }}{{ end }}
+{{ if .Labels.agent_id }}*Agent:* {{ .Labels.agent_id }}{{ end }}
+{{ if .Labels.protocol }}*Protocol:* {{ .Labels.protocol }}{{ end }}
+
+*Started:* {{ .StartsAt.Format "15:04:05 UTC" }}
+{{ if .EndsAt }}*Ended:* {{ .EndsAt.Format "15:04:05 UTC" }}{{ end }}
+{{ end }}
+{{ end }}
+
+{{ define "slack.tsaf.color" }}
+{{ if eq .Status "firing" }}
+  {{ if eq .CommonLabels.severity "critical" }}danger{{ else if eq .CommonLabels.severity "warning" }}warning{{ else }}good{{ end }}
+{{ else }}
+  good
+{{ end }}
+{{ end }}
+
+{{ define "slack.tsaf.fallback" }}
+TSAF {{ .Status | upper }}: {{ .GroupLabels.alertname }} ({{ .Alerts | len }} alerts)
+{{ end }}
+
+{{ define "slack.security.text" }}
+🔒 *SECURITY ALERT* 🔒
+
+{{ range .Alerts }}
+*{{ .Annotations.summary }}*
+{{ .Annotations.description }}
+
+*Threat Level:* {{ .Labels.severity | upper }}
+{{ if .Labels.vulnerability_type }}*Vulnerability:* {{ .Labels.vulnerability_type }}{{ end }}
+{{ if .Labels.agent_id }}*Affected Agent:* {{ .Labels.agent_id }}{{ end }}
+{{ if .Labels.protocol }}*Protocol:* {{ .Labels.protocol }}{{ end }}
+
+*Detected:* {{ .StartsAt.Format "15:04:05 UTC" }}
+{{ if .EndsAt }}*Resolved:* {{ .EndsAt.Format "15:04:05 UTC" }}{{ end }}
+
+⚠️ This requires immediate security team attention!
+{{ end }}
+{{ end }}
+
+{{ define "slack.performance.text" }}
+⚡ *PERFORMANCE ALERT* ⚡
+
+{{ range .Alerts }}
+*{{ .Annotations.summary }}*
+{{ .Annotations.description }}
+
+*Service:* {{ .Labels.service }}
+*Impact:* {{ .Labels.severity | upper }}
+{{ if .Labels.protocol }}*Protocol:* {{ .Labels.protocol }}{{ end }}
+
+*Started:* {{ .StartsAt.Format "15:04:05 UTC" }}
+{{ if .EndsAt }}*Resolved:* {{ .EndsAt.Format "15:04:05 UTC" }}{{ end }}
+
+📊 Check Grafana dashboards for detailed metrics
+{{ end }}
+{{ end }}
+
+{{ define "slack.infrastructure.text" }}
+🏗️ *INFRASTRUCTURE ALERT* 🏗️
+
+{{ range .Alerts }}
+*{{ .Annotations.summary }}*
+{{ .Annotations.description }}
+
+*Component:* {{ .Labels.service }}
+*Status:* {{ .Labels.severity | upper }}
+
+*Started:* {{ .StartsAt.Format "15:04:05 UTC" }}
+{{ if .EndsAt }}*Resolved:* {{ .EndsAt.Format "15:04:05 UTC" }}{{ end }}
+
+🔧 Infrastructure team please investigate
+{{ end }}
+{{ end }}

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tsaf
+  labels:
+    name: tsaf
+    app.kubernetes.io/name: tsaf
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    description: "TSAF - Translation Security Analysis Framework"
