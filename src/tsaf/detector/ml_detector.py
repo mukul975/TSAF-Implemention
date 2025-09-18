@@ -7,6 +7,7 @@ import asyncio
 import joblib
 import json
 import numpy as np
+import time
 from typing import Dict, List, Optional, Any, Union
 import uuid
 import re
@@ -510,11 +511,290 @@ class MLThreatDetector:
         else:
             return SeverityLevel.LOW
 
+    async def add_training_sample(self, message: str, is_threat: bool,
+                                 threat_categories: List[str] = None,
+                                 confidence: float = 1.0) -> None:
+        """Add new training sample for online learning."""
+        try:
+            sample = {
+                'message': message,
+                'is_threat': is_threat,
+                'categories': threat_categories or [],
+                'confidence': confidence,
+                'timestamp': time.time(),
+                'id': str(uuid.uuid4())
+            }
+
+            self.training_samples.append(sample)
+
+            # Trigger retraining if threshold reached
+            if len(self.training_samples) >= self.retrain_threshold:
+                await self._retrain_models()
+
+            logger.debug("Training sample added",
+                        sample_id=sample['id'],
+                        is_threat=is_threat,
+                        categories=threat_categories)
+
+        except Exception as e:
+            logger.error("Failed to add training sample", error=str(e))
+
+    async def add_feedback(self, message_id: str, correct_classification: bool,
+                          actual_threats: List[str] = None) -> None:
+        """Add feedback for model improvement."""
+        try:
+            feedback = {
+                'message_id': message_id,
+                'correct': correct_classification,
+                'actual_threats': actual_threats or [],
+                'timestamp': time.time()
+            }
+
+            self.feedback_samples.append(feedback)
+
+            # Update model performance tracking
+            await self._update_performance_metrics(feedback)
+
+            logger.debug("Feedback added",
+                        message_id=message_id,
+                        correct=correct_classification)
+
+        except Exception as e:
+            logger.error("Failed to add feedback", error=str(e))
+
+    async def _retrain_models(self) -> None:
+        """Retrain models with new data."""
+        if not TORCH_AVAILABLE or not self._initialized:
+            return
+
+        try:
+            logger.info("Starting model retraining",
+                       training_samples=len(self.training_samples))
+
+            # Prepare training data
+            X_text, y_labels = self._prepare_training_data()
+
+            if len(X_text) < 10:  # Need minimum samples
+                logger.warning("Insufficient training data for retraining")
+                return
+
+            # Generate BERT embeddings for training data
+            X_embeddings = await self._generate_embeddings_batch(X_text)
+
+            # Retrain threat classifier
+            await self._retrain_threat_classifier(X_embeddings, y_labels)
+
+            # Retrain anomaly detector
+            await self._retrain_anomaly_detector(X_embeddings)
+
+            # Update TF-IDF vectorizer
+            self.tfidf_vectorizer.fit(X_text)
+
+            # Save updated models
+            await self._save_models()
+
+            # Clear training samples to prevent memory growth
+            self.training_samples = self.training_samples[-100:]  # Keep recent samples
+
+            logger.info("Model retraining completed successfully")
+
+        except Exception as e:
+            logger.error("Model retraining failed", error=str(e))
+
+    def _prepare_training_data(self) -> tuple[List[str], List[int]]:
+        """Prepare training data from collected samples."""
+        X_text = []
+        y_labels = []
+
+        for sample in self.training_samples:
+            X_text.append(sample['message'])
+            # Convert boolean to binary classification
+            y_labels.append(1 if sample['is_threat'] else 0)
+
+        return X_text, y_labels
+
+    async def _generate_embeddings_batch(self, texts: List[str]) -> np.ndarray:
+        """Generate BERT embeddings for batch of texts."""
+        embeddings = []
+
+        # Process in batches to manage memory
+        batch_size = 32
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            batch_embeddings = []
+
+            for text in batch_texts:
+                embedding = await self._get_bert_embedding(text)
+                batch_embeddings.append(embedding)
+
+            embeddings.extend(batch_embeddings)
+
+        return np.array(embeddings)
+
+    async def _retrain_threat_classifier(self, X_embeddings: np.ndarray, y_labels: List[int]) -> None:
+        """Retrain the neural network threat classifier."""
+        try:
+            # Convert to torch tensors
+            X_tensor = torch.FloatTensor(X_embeddings)
+            y_tensor = torch.LongTensor(y_labels)
+
+            # Simple retraining with SGD
+            optimizer = torch.optim.Adam(self.threat_classifier.parameters(), lr=0.001)
+            criterion = nn.CrossEntropyLoss()
+
+            self.threat_classifier.train()
+
+            # Mini-batch training
+            batch_size = 16
+            for epoch in range(10):  # Quick retraining
+                for i in range(0, len(X_tensor), batch_size):
+                    batch_X = X_tensor[i:i + batch_size]
+                    batch_y = y_tensor[i:i + batch_size]
+
+                    optimizer.zero_grad()
+                    outputs = self.threat_classifier(batch_X)
+                    loss = criterion(outputs, batch_y)
+                    loss.backward()
+                    optimizer.step()
+
+            self.threat_classifier.eval()
+            logger.debug("Threat classifier retrained successfully")
+
+        except Exception as e:
+            logger.error("Failed to retrain threat classifier", error=str(e))
+
+    async def _retrain_anomaly_detector(self, X_embeddings: np.ndarray) -> None:
+        """Retrain the isolation forest anomaly detector."""
+        try:
+            # Create new anomaly detector with updated data
+            new_detector = IsolationForest(
+                contamination=0.1,
+                n_estimators=100,
+                random_state=42
+            )
+
+            new_detector.fit(X_embeddings)
+            self.anomaly_detector = new_detector
+
+            logger.debug("Anomaly detector retrained successfully")
+
+        except Exception as e:
+            logger.error("Failed to retrain anomaly detector", error=str(e))
+
+    async def _update_performance_metrics(self, feedback: Dict[str, Any]) -> None:
+        """Update model performance tracking."""
+        try:
+            # Simple performance tracking
+            current_time = time.time()
+            performance_entry = {
+                'timestamp': current_time,
+                'correct': feedback['correct'],
+                'message_id': feedback['message_id']
+            }
+
+            self.model_performance_history.append(performance_entry)
+
+            # Keep only recent performance data (last 1000 entries)
+            if len(self.model_performance_history) > 1000:
+                self.model_performance_history = self.model_performance_history[-1000:]
+
+            # Calculate recent performance
+            recent_performance = self._calculate_recent_performance()
+
+            # Trigger retraining if performance dropped
+            if recent_performance < self.performance_threshold and len(self.training_samples) > 50:
+                logger.warning("Model performance degraded, scheduling retraining",
+                              performance=recent_performance)
+                await self._retrain_models()
+
+        except Exception as e:
+            logger.error("Failed to update performance metrics", error=str(e))
+
+    def _calculate_recent_performance(self, window_size: int = 100) -> float:
+        """Calculate recent model performance."""
+        if not self.model_performance_history:
+            return 1.0
+
+        recent_entries = self.model_performance_history[-window_size:]
+        correct_predictions = sum(1 for entry in recent_entries if entry['correct'])
+
+        return correct_predictions / len(recent_entries)
+
+    async def get_model_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive model statistics."""
+        try:
+            stats = {
+                'initialization_status': self._initialized,
+                'training_samples': len(self.training_samples),
+                'feedback_samples': len(self.feedback_samples),
+                'performance_history_size': len(self.model_performance_history),
+                'recent_performance': self._calculate_recent_performance(),
+                'models_available': {
+                    'bert_model': self.bert_model is not None,
+                    'threat_classifier': self.threat_classifier is not None,
+                    'anomaly_detector': self.anomaly_detector is not None,
+                    'tfidf_vectorizer': self.tfidf_vectorizer is not None
+                }
+            }
+
+            # Add performance metrics if available
+            if self.model_performance_history:
+                recent_100 = self.model_performance_history[-100:]
+                stats['performance_metrics'] = {
+                    'accuracy_last_100': self._calculate_recent_performance(100),
+                    'accuracy_last_50': self._calculate_recent_performance(50),
+                    'accuracy_last_10': self._calculate_recent_performance(10),
+                    'total_feedback_received': len(self.model_performance_history)
+                }
+
+            return stats
+
+        except Exception as e:
+            logger.error("Failed to get model statistics", error=str(e))
+            return {'error': str(e)}
+
+    async def export_model_data(self) -> Dict[str, Any]:
+        """Export model data for analysis or backup."""
+        try:
+            export_data = {
+                'training_samples': self.training_samples[-100:],  # Recent samples only
+                'performance_history': self.model_performance_history[-500:],
+                'model_config': {
+                    'retrain_threshold': self.retrain_threshold,
+                    'performance_threshold': self.performance_threshold,
+                    'ensemble_size': self.ensemble_size
+                },
+                'statistics': await self.get_model_statistics(),
+                'export_timestamp': time.time()
+            }
+
+            return export_data
+
+        except Exception as e:
+            logger.error("Failed to export model data", error=str(e))
+            return {'error': str(e)}
+
     async def shutdown(self) -> None:
         """Shutdown ML detector and save models."""
         if self._initialized:
             logger.info("Shutting down ML Threat Detector")
             await self._save_models()
+
+            # Save training data and performance history
+            try:
+                models_dir = Path("models")
+                models_dir.mkdir(exist_ok=True)
+
+                # Export model data for future use
+                export_data = await self.export_model_data()
+                with open(models_dir / "ml_detector_data.json", 'w') as f:
+                    json.dump(export_data, f, indent=2)
+
+                logger.info("ML detector data exported successfully")
+
+            except Exception as e:
+                logger.error("Failed to export ML detector data", error=str(e))
+
             self._initialized = False
 
 
